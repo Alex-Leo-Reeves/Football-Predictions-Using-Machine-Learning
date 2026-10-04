@@ -105,6 +105,7 @@ jobs:
   fine-tune-deepseek:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    needs: train-and-predict
     if: github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout Repository
