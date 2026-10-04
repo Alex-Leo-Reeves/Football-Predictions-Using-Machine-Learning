@@ -17,7 +17,8 @@ env/
 *.env.local
 
 # Model artifacts & outputs (generated on CI runners)
-models/
+# NOTE: /models/ (root-only) — NOT "models/" which would also ignore src/models/
+/models/
 output/
 artifacts/
 *.joblib
