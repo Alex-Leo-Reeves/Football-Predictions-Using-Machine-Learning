@@ -1,0 +1,175 @@
+# ============================================================
+# Football Prediction Engine — Configuration
+# ============================================================
+
+project:
+  name: football-prediction-engine
+  timezone: UTC
+
+# ------------------------------------------------------------
+# Data sources
+# ------------------------------------------------------------
+data:
+  # Local cache for API responses (gitignored). Keeps us within free-tier
+  # request budgets by never re-fetching the same data.
+  cache_dir: "data/raw"
+  odds_api:
+    base_url: "https://api.the-odds-api.com/v4"
+    sport: "soccer_epl"          # see The Odds API sport keys
+    regions: "eu"
+    markets: ["h2h", "totals", "spreads"]
+    # Free tier = 500 req/month per key (multi-key rotation supported)
+    daily_budget: 500
+  oddspapi:
+    # PRIMARY odds source — free historical odds + line-movement analysis,
+    # 300+ bookmakers. Auth: apiKey query param.
+    base_url: "https://api.oddspapi.io"
+    sport_id: 10                 # 10 = soccer
+    bookmaker: "pinnacle"
+    daily_budget: 500
+  football_api:
+    base_url: "https://v3.football.api-sports.io"
+    league_id: 39                # 39 = EPL, 140 = La Liga, etc.
+    # NOTE: the API-Football FREE plan only has access to seasons 2022-2024.
+    # We train on ALL of them (3 full seasons ≈ 1,140 EPL matches) instead of
+    # a single season. Today's fixtures come from OddsPapi (which has the
+    # current season) when this returns nothing.
+    seasons: [2022, 2023, 2024]
+    season: 2024                 # primary/fallback season (kept for compat)
+    # Free tier = 100 req/day per key (multi-key rotation supported).
+    # Per-match statistics cost 1 request each, so we only enrich the most
+    # recent N completed fixtures per run.
+    daily_budget: 90
+    max_stats_fixtures: 60
+  # When true (and no API keys present), the pipeline uses a
+  # deterministic synthetic fixture generator so it runs end-to-end.
+  use_mock: true
+
+# ------------------------------------------------------------
+# Feature engineering
+# ------------------------------------------------------------
+features:
+  ema_windows: [3, 5, 10]
+  elo:
+    k: 32
+    home_advantage: 65
+    margin_factor: 1.0
+    init_rating: 1500
+  kpai:
+    top_n: 3                     # top-N key players tracked for availability
+  venue:
+    window: 20                   # home games used for fortress index
+  h2h:
+    window: 10                   # recent H2H meetings considered
+
+# ------------------------------------------------------------
+# LLM expert (DeepSeek V4 Flash via dahl.global inference API)
+# ------------------------------------------------------------
+llm:
+  base_url: "https://inference.dahl.global/v1"
+  model: "deepseek-ai/DeepSeek-V4-Flash-0731"
+  temperature: 0.0
+  # Output budget: V4 Flash supports up to 300k output tokens. We use a
+  # generous but sane default so the expert can return a full per-market
+  # probability breakdown + reasoning. Raise it if you want even richer
+  # output (costs more tokens per call).
+  max_tokens: 8000
+  # Context budget: V4 Flash supports 350k context tokens. When
+  # rich_context is true, the expert receives raw recent form, H2H,
+  # injuries and odds — not just a compressed feature summary.
+  max_context_tokens: 350000
+  rich_context: true
+  # Blend weight for the LLM expert vs statistical workers (0.3 = 30% LLM)
+  mix_weight: 0.3
+  fine_tune:
+    # Fine-tuning is a DeepSeek PLATFORM feature; dahl.global is
+    # inference-only. Point this at the official platform if you have
+    # a DeepSeek account there.
+    base_url: "https://api.deepseek.com"
+    base_model: "deepseek-chat"
+
+# ------------------------------------------------------------
+# Models
+# ------------------------------------------------------------
+models:
+  # auto = try xgboost -> lightgbm -> sklearn HistGradientBoosting
+  backend: auto
+  worker:
+    n_estimators: 300
+    learning_rate: 0.05
+    max_depth: 4
+    subsample: 0.9
+    colsample_bytree: 0.9
+  calibration:
+    method: isotonic            # isotonic | sigmoid
+    cv: 5
+  conformal:
+    # Strict risk gate: alpha <= 0.001 means the conformal prediction set
+    # must contain the true outcome with >= 99.9% probability. The master
+    # brain abstains (SKIP) whenever the set is wider than a single class.
+    alpha: 0.001
+    calibration_fraction: 0.20
+  anomaly:
+    contamination: 0.05
+    random_state: 42
+
+# ------------------------------------------------------------
+# Market scanning & selection
+# ------------------------------------------------------------
+markets:
+  thresholds:
+    # Ultra-safe markets (team O0.5, AH +2.5, corners O6.5...) must clear
+    # the 0.985 bulletproof floor before the engine EXECUTEs them.
+    high_floor: 0.985
+    # Other markets (double chance / totals) clear at 0.90 — the
+    # accumulator's min_confidence (0.985) still filters them out of the
+    # final ticket, so nothing below the floor ever ships.
+    primary: 0.90
+  max_goals: 6                  # max goals in the Poisson matrix
+  min_edge: 0.02                # minimum model-vs-implied edge to accept
+  basketball:
+    # Default lines used when no live odds are attached (mock mode).
+    spread: -5.5                # home team spread
+    alt_spread: -12.5           # alternate spread (high-floor line)
+    total_line: 220.5           # over/under total
+    home_total: 108.5           # home team total line
+
+# ------------------------------------------------------------
+# Accumulator / ticket building
+# ------------------------------------------------------------
+pipeline:
+  target_odds: 300.0
+  # Hard confidence floor for zero-cut execution. At 0.985 a single leg fails
+  # only ~1.5% of the time; the engine would rather output a LOWER-odds
+  # ticket (or none) than dilute this floor to force 300.
+  min_confidence: 0.985
+  max_legs: 30
+  max_same_match_legs: 1         # never stack correlated same-match legs
+  # How close to the target we need to land before stopping the downgrade
+  # loop (fraction of target, e.g. 0.05 = ±5% of 300 = 285..315).
+  target_tolerance: 0.05
+  # Top-N ranked markets per fixture exposed as downgrade variants so the
+  # accumulator can make a pick "leaner" (e.g. home_win -> home_or_draw)
+  # to fine-tune the total odds toward the target.
+  max_variants_per_fixture: 5
+  # Betting window: only fixtures that kick off between now and this local
+  # end time are considered. Matches already started (e.g. 9am when run at
+  # 10am) are excluded automatically.
+  kickoff_window:
+    start: "now"
+    end: "23:30"
+  # ALL-OR-NOTHING rule: if ANY leg fails the whole ticket is a loss.
+  # System-bet splits (4/5, 5/6...) hedge against single-leg risk and
+  # contradict that rule, so they are OFF by default. Set true to re-enable.
+  system_bets: false
+  # Used when no live odds are available (mock mode): model-estimated
+  # fair odds so the accumulator can still build a ticket.
+  default_odds: 1.15
+
+# ------------------------------------------------------------
+# Output
+# ------------------------------------------------------------
+output:
+  dir: output
+  ticket_file: todays_ticket.json
+  report_file: daily_report.json

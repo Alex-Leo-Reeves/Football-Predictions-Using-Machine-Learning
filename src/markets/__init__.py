@@ -1,0 +1,1 @@
+"""Markets: registry, scanner, accumulator."""
