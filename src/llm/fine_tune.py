@@ -98,7 +98,8 @@ class DeepSeekFineTuner:
     def create_job(self, training_file: str, model: str | None = None,
                    suffix: str | None = None, n_epochs: int = 3) -> str:
         """Create a fine-tuning job, returns job id."""
-        model = model or os.getenv("DEEPSEEK_FT_MODEL") or get("llm.fine_tune.base_model", "deepseek-chat")
+        model = model or os.getenv("DEEPSEEK_FT_MODEL") or get(
+            "llm.fine_tune.base_model", "deepseek-ai/DeepSeek-V4-Flash-0731")
         payload: Dict[str, Any] = {
             "model": model,
             "training_file": training_file,
