@@ -80,6 +80,15 @@ def main() -> None:
         print("Polling (this can take a while)...")
         status = tuner.poll_job(job_id, interval=30, max_wait=3600)
         print(json.dumps(status, indent=2))
+        # The fine-tuned model id is what the pipeline should use for
+        # inference — set it as DEEPSEEK_MODEL to make the fine-tuned
+        # brain drive predictions (one big brain, not a separate job).
+        ft_model = status.get("fine_tuned_model") or status.get("model")
+        if status.get("status") == "succeeded" and ft_model:
+            print("\n✅ Fine-tuning succeeded!")
+            print(f"Fine-tuned model id: {ft_model}")
+            print("To use it in the pipeline, set the GitHub secret:")
+            print(f"  DEEPSEEK_MODEL = {ft_model}")
 
 
 if __name__ == "__main__":

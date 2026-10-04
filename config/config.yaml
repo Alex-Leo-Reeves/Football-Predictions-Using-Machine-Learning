@@ -82,11 +82,11 @@ llm:
   # Blend weight for the LLM expert vs statistical workers (0.3 = 30% LLM)
   mix_weight: 0.3
   fine_tune:
-    # Fine-tuning is a DeepSeek PLATFORM feature; dahl.global is
-    # inference-only. Point this at the official platform if you have
-    # a DeepSeek account there.
-    base_url: "https://api.deepseek.com"
-    base_model: "deepseek-chat"
+    # dahl.global is OpenAI-compatible, so fine-tuning uses the SAME
+    # endpoint + key as inference (no separate DeepSeek platform needed).
+    # Override with DEEPSEEK_FT_BASE_URL if your provider differs.
+    base_url: "https://inference.dahl.global/v1"
+    base_model: "deepseek-ai/DeepSeek-V4-Flash-0731"
 
 # ------------------------------------------------------------
 # Models

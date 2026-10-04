@@ -69,10 +69,11 @@ class DeepSeekFineTuner:
 
     def __init__(self, api_key: str | None = None, base_url: str | None = None):
         self.api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or get("llm.api_key", None)
-        # Fine-tuning is a DeepSeek PLATFORM feature. The dahl.global endpoint
-        # is inference-only, so fine-tuning defaults to the official platform
-        # (configurable via llm.fine_tune.base_url).
-        self.base_url = base_url or get("llm.fine_tune.base_url", "https://api.deepseek.com")
+        # OpenAI-compatible fine-tuning on the SAME endpoint as inference
+        # (dahl.global). Override with DEEPSEEK_FT_BASE_URL if your provider
+        # exposes fine-tuning on a different host.
+        self.base_url = base_url or os.getenv("DEEPSEEK_FT_BASE_URL") or get(
+            "llm.fine_tune.base_url", "https://inference.dahl.global/v1")
         if not self.api_key:
             raise RuntimeError("DEEPSEEK_API_KEY not set")
         self.headers = {
