@@ -28,8 +28,12 @@ def send_telegram(token: str, chat_id: str, text: str) -> bool:
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         resp = requests.post(url, json={"chat_id": chat_id, "text": text,
                                         "parse_mode": "HTML"}, timeout=10)
-        return resp.status_code == 200
-    except requests.RequestException:
+        ok = resp.status_code == 200
+        if not ok:
+            print(f"[notify] Telegram send failed: HTTP {resp.status_code} — {resp.text[:200]}")
+        return ok
+    except requests.RequestException as exc:
+        print(f"[notify] Telegram send error: {exc}")
         return False
 
 
@@ -88,15 +92,24 @@ def _build_message(ticket: Dict[str, Any]) -> str:
     return "\n\n".join([header, *blocks, footer])
 
 
-def notify_ticket(ticket: Dict[str, Any]) -> None:
-    """Send ticket summary to any configured channels."""
+def notify_ticket(ticket: Dict[str, Any]) -> Dict[str, Any]:
+    """Send ticket summary to any configured channels.
+
+    Returns a result dict so the workflow can log exactly what happened
+    (which channels were configured, whether each send succeeded).
+    """
     content = _build_message(ticket)
+    results: Dict[str, Any] = {"telegram": None, "discord": None}
 
     discord_url = os.getenv("DISCORD_WEBHOOK_URL")
     if discord_url:
-        send_discord(discord_url, content)
+        results["discord"] = send_discord(discord_url, content)
     token = os.getenv("TELEGRAM_BOT_TOKEN")
     chat_id = os.getenv("TELEGRAM_CHAT_ID")
     if token and chat_id:
-        send_telegram(token, chat_id, content)
+        results["telegram"] = send_telegram(token, chat_id, content)
+    else:
+        print("[notify] TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID not set — skipping Telegram")
+    print(f"[notify] notify_ticket result: {results}")
+    return results
 
