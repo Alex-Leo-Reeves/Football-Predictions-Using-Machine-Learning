@@ -108,15 +108,23 @@ def build_real_history(client, league: int, seasons,
     return results
 
 
-def build_real_today_fixtures(client, odds_client, oddspapi_client, league: int, season: int) -> List[Fixture]:
+def build_real_today_fixtures(client, odds_client, oddspapi_client,
+                              league: int, season: int,
+                              league_ids: List[int] | None = None) -> List[Fixture]:
     """Build today's Fixture objects with odds attached (if available).
+
+    Scans EVERY league in ``league_ids`` (defaults to ``[league]``) so the
+    engine covers matches worldwide, not just one competition.
 
     Odds source priority: OddsPapi (primary, has historical + more
     bookmakers) -> The Odds API (fallback).
     """
     from src.data.api_football import parse_fixture_basic
 
-    items = client.today_fixtures(league, season)
+    ids = league_ids or [league]
+    items: List[Dict[str, Any]] = []
+    for lid in ids:
+        items.extend(client.today_fixtures(lid, season))
     if not items:
         return []
 
@@ -175,7 +183,13 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
     if not tids:
         return []
 
-    fixtures = oddspapi_client.fixtures(tids[:20])
+    # Fetch fixtures for ALL tournaments (chunked so the URL stays sane).
+    # This is what makes the engine scan every league/competition today,
+    # not just the first 20.
+    fixtures: List[Dict[str, Any]] = []
+    for i in range(0, len(tids), 50):
+        chunk = tids[i:i + 50]
+        fixtures.extend(oddspapi_client.fixtures(chunk))
     today = date.today()
     today_start = datetime.combine(today, datetime.min.time())
     today_end = today_start + timedelta(days=1)
@@ -241,11 +255,13 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
     tids = [t.get("tournamentId") for t in tournaments if t.get("tournamentId")]
     if not tids:
         return {}
-    odds_items = oddspapi_client.odds_by_tournaments(tids[:20], bookmaker="pinnacle")
+    odds_items = oddspapi_client.odds_by_tournaments(tids, bookmaker="pinnacle")
     parsed = parse_oddspapi_odds(odds_items, oddspapi_client._market_names)
 
-    # Build fixtureId -> (home, away) names from OddsPapi fixtures
-    fixtures = oddspapi_client.fixtures(tids[:20])
+    # Build fixtureId -> (home, away) names from OddsPapi fixtures (all tids)
+    fixtures: List[Dict[str, Any]] = []
+    for i in range(0, len(tids), 50):
+        fixtures.extend(oddspapi_client.fixtures(tids[i:i + 50]))
     fid_to_names: Dict[str, tuple] = {}
     for f in fixtures:
         fid = str(f.get("fixtureId", ""))
@@ -385,15 +401,9 @@ class DataLoader:
         if self.use_mock:
             return self._ensure_synthetic().today_fixtures()
         fb, odds, oddspapi = self._ensure_real_clients()
-        if fb is not None:
-            league = int(get("data.football_api.league_id", 39))
-            season = int(get("data.football_api.season", 2024))
-            real = build_real_today_fixtures(fb, odds, oddspapi, league, season)
-            if real:
-                return real
-            print("[ingestion] API-Football returned no today fixtures")
-        # Fallback: OddsPapi has the current season (API-Football free plan
-        # only covers 2022-2024).
+        # PRIMARY: OddsPapi covers ALL leagues/competitions in a few chunked
+        # requests (tournaments -> fixtures), so try it first for the full
+        # worldwide slate.
         if oddspapi is not None:
             try:
                 real = build_oddspapi_today_fixtures(oddspapi)
@@ -401,6 +411,16 @@ class DataLoader:
                     return real
             except Exception as exc:  # pragma: no cover
                 print(f"[ingestion] OddsPapi today fixtures failed: {exc}")
+        # FALLBACK: API-Football (free plan only covers 2022-2024 seasons).
+        if fb is not None:
+            league = int(get("data.football_api.league_id", 39))
+            season = int(get("data.football_api.season", 2024))
+            league_ids = get("data.football_api.league_ids", [league])
+            real = build_real_today_fixtures(fb, odds, oddspapi, league, season,
+                                             league_ids=league_ids)
+            if real:
+                return real
+            print("[ingestion] API-Football returned no today fixtures")
         return self._ensure_synthetic().today_fixtures()
 
     def load_basketball_history(self) -> List[MatchResult]:
