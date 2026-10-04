@@ -31,7 +31,12 @@ class ConformalClassifier:
         self.cal_scores_: np.ndarray | None = None
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> "ConformalClassifier":
-        """Split data, fit base model, compute calibration quantile."""
+        """Split data, fit base model, compute calibration quantile.
+
+        String labels (e.g. ``['A','D','H']``) are encoded to integers before
+        fitting — XGBoost requires numeric classes — and mapped back to the
+        original labels in :meth:`predict_set`.
+        """
         rng = np.random.default_rng(self.random_state)
         n = len(X)
         n_cal = max(10, int(n * self.calibration_fraction))
@@ -40,6 +45,14 @@ class ConformalClassifier:
 
         X_train, y_train = X[train_idx], y[train_idx]
         X_cal, y_cal = X[cal_idx], y[cal_idx]
+
+        # Encode string labels to integers (XGBoost needs numeric classes).
+        self.label_map_: dict | None = None
+        if y.dtype.kind in "OUS" or any(isinstance(v, str) for v in y[:10]):
+            unique = np.unique(y)
+            self.label_map_ = {label: i for i, label in enumerate(unique)}
+            y_train = np.array([self.label_map_[v] for v in y_train])
+            y_cal = np.array([self.label_map_[v] for v in y_cal])
 
         self.base_model.fit(X_train, y_train)
         self.classes_ = np.asarray(self.base_model.classes_)
@@ -61,10 +74,15 @@ class ConformalClassifier:
         if self.classes_ is None:
             raise RuntimeError("ConformalClassifier not fitted")
         probs = self.base_model.predict_proba(X)
+        inv_map = None
+        if self.label_map_ is not None:
+            inv_map = {v: k for k, v in self.label_map_.items()}
         sets: List[List[str]] = []
         for row in probs:
-            included = [str(c) for c, p in zip(self.classes_, row) if p >= 1.0 - self.qhat_]
-            sets.append(included)
+            included = [int(c) for c, p in zip(self.classes_, row) if p >= 1.0 - self.qhat_]
+            if inv_map is not None:
+                included = [inv_map[c] for c in included]
+            sets.append([str(c) for c in included])
         return sets
 
     def predict_single(self, x: np.ndarray) -> Tuple[List[str], float]:
