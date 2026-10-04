@@ -18,7 +18,14 @@ from typing import Dict, List, Optional
 
 
 def parse_keys(*env_names: str) -> List[str]:
-    """Collect keys from multiple env vars (comma-separated supported)."""
+    """Collect keys from env vars (comma-separated) OR hardcoded config.
+
+    Priority: env var (e.g. ``FOOTBALL_API_KEYS``) -> config ``data.api_keys``.
+    The config fallback lets the pipeline run with hardcoded rotation keys
+    even when GitHub secrets aren't set.
+    """
+    from src.config import get
+
     keys: List[str] = []
     for name in env_names:
         raw = os.getenv(name, "")
@@ -26,6 +33,13 @@ def parse_keys(*env_names: str) -> List[str]:
             part = part.strip()
             if part and part not in keys:
                 keys.append(part)
+    if not keys:
+        # Fall back to hardcoded config keys. Map env name -> config key.
+        # e.g. "FOOTBALL_API_KEYS" -> data.api_keys.football_api
+        cfg_key = name.lower().replace("_keys", "").replace("_key", "")
+        for k in get(f"data.api_keys.{cfg_key}", []):
+            if k and k not in keys:
+                keys.append(k)
     return keys
 
 

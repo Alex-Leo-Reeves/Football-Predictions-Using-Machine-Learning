@@ -52,6 +52,29 @@ data:
   # (API-Football / OddsPapi / The Odds API) and only falls back to the
   # synthetic generator when no keys are available — so it scans ALL of
   # today's real matches, not just 20 synthetic ones.
+  # Hardcoded API keys for rotation (fallback when env secrets are missing).
+  # The KeyPool rotates round-robin and skips keys that fail. NOTE: these are
+  # committed to the repo — rotate them if this repo is public.
+  api_keys:
+    odds_api:
+      - d57225375d92900674ce7f5379bab1bd
+      - 610248b9f6aca7ec85e0e00a59c1db16
+      - 35550640ef94b0a266099cf8e4ecd609
+      - 33f850d25022236143d53b2e6df27122
+      - 2c2db3ad443bfff61b2f589dd4839476
+    football_api:
+      - 9657f1ab13f8cc138d92dbd46c8ab6a6
+      - 98ad202efc641c8006567bbcccaf7474
+      - ac8b34d084ed1fef461894c62aca6244
+      - d8dd585e37851a41af279e8d9c308ffd
+      - 6d986d86423fda97933315b079e0750b
+    oddspapi:
+      - 62abf911-68eb-41bb-a69c-6909f65402de
+      - 26731ead-bb33-427b-a033-8d0146694dfe
+      - 1a74974c-c34a-4bc9-9ae0-a2c43f72dfa9
+      - bb763c58-3b36-4dc8-b205-6b5cdbe6f9f1
+      - 37f9273f-16b7-4b0b-8b67-3409bd22fb17
+
   use_mock: false
 
 # ------------------------------------------------------------

@@ -23,14 +23,17 @@ def _has_key(name: str) -> bool:
     """True if a key is present in env (singular OR plural _KEYS) or config.
 
     ``name`` is the singular form (e.g. ``FOOTBALL_API_KEY``); the plural
-    secret is ``FOOTBALL_API_KEYS`` (replace trailing KEY with KEYS).
+    secret is ``FOOTBALL_API_KEYS`` (replace trailing KEY with KEYS). Also
+    checks the hardcoded ``data.api_keys`` config section.
     """
     plural = name[:-3] + "KEYS" if name.endswith("KEY") else name + "_KEYS"
+    cfg_key = name.lower().replace("_key", "")
     return bool(
         os.getenv(name)
         or os.getenv(plural)
         or get(f"data.{name.lower()}", None)
         or get(f"data.{name.lower()}_keys", None)
+        or get(f"data.api_keys.{cfg_key}", [])
     )
 
 
@@ -133,6 +136,11 @@ def build_real_today_fixtures(client, odds_client, oddspapi_client,
     from src.data.api_football import parse_fixture_basic
 
     ids = league_ids or [league]
+    # Cap the number of leagues scanned per run — API-Football's free plan
+    # rate-limits at ~10 req/min, so scanning 281 leagues in one burst gets
+    # 429'd. OddsPapi (the primary source) already covers ALL leagues.
+    max_leagues = int(get("data.football_api.max_leagues_per_run", 30))
+    ids = ids[:max_leagues]
     items: List[Dict[str, Any]] = []
     for lid in ids:
         items.extend(client.today_fixtures(lid, season))
@@ -196,10 +204,10 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
 
     # Fetch fixtures for ALL tournaments (chunked so the URL stays sane).
     # This is what makes the engine scan every league/competition today,
-    # not just the first 20.
+    # not just the first 20. Chunk size 20 keeps the URL within API limits.
     fixtures: List[Dict[str, Any]] = []
-    for i in range(0, len(tids), 50):
-        chunk = tids[i:i + 50]
+    for i in range(0, len(tids), 20):
+        chunk = tids[i:i + 20]
         fixtures.extend(oddspapi_client.fixtures(chunk))
     today = date.today()
     today_start = datetime.combine(today, datetime.min.time())
@@ -271,8 +279,8 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
 
     # Build fixtureId -> (home, away) names from OddsPapi fixtures (all tids)
     fixtures: List[Dict[str, Any]] = []
-    for i in range(0, len(tids), 50):
-        fixtures.extend(oddspapi_client.fixtures(tids[i:i + 50]))
+    for i in range(0, len(tids), 20):
+        fixtures.extend(oddspapi_client.fixtures(tids[i:i + 20]))
     fid_to_names: Dict[str, tuple] = {}
     for f in fixtures:
         fid = str(f.get("fixtureId", ""))

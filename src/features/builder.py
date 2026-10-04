@@ -50,8 +50,18 @@ class FeatureBuilder:
     def fixture_features(self, fixture: Fixture) -> Dict[str, float]:
         """Build a feature dict for an upcoming fixture (no leakage)."""
         home_id, away_id = fixture.home_team_id, fixture.away_team_id
-        # Only matches before kickoff are usable
-        prior = [m for m in self.history if m.kickoff < fixture.kickoff]
+        # Only matches before kickoff are usable. Normalize timezones so we
+        # never crash comparing offset-naive vs offset-aware datetimes.
+        kickoff = fixture.kickoff
+        if kickoff.tzinfo is not None:
+            kickoff = kickoff.replace(tzinfo=None)
+        prior = []
+        for m in self.history:
+            mk = m.kickoff
+            if mk.tzinfo is not None:
+                mk = mk.replace(tzinfo=None)
+            if mk < kickoff:
+                prior.append(m)
 
         home_roll = self.rolling.team_features(prior, home_id)
         away_roll = self.rolling.team_features(prior, away_id)

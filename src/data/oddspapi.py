@@ -73,6 +73,10 @@ class OddsPapiClient:
     def _get(self, path: str, params: Dict[str, Any], cache_key: str | None = None,
              ttl_hours: int = 6) -> Optional[Dict[str, Any]]:
         cache_key = cache_key or f"{path}_{json.dumps(params, sort_keys=True)}"
+        # Hash long cache keys so the filename never exceeds filesystem limits.
+        if len(cache_key) > 80:
+            import hashlib
+            cache_key = hashlib.sha256(cache_key.encode()).hexdigest()[:40]
         cache_file = CACHE_DIR / f"oddspapi_{cache_key.replace('/', '_').replace('?', '_')}.json"
 
         if cache_file.exists():
