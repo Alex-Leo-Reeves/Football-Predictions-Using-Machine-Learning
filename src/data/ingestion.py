@@ -20,10 +20,15 @@ class IngestionError(RuntimeError):
 
 
 def _has_key(name: str) -> bool:
-    """True if a key is present in env (singular OR plural _KEYS) or config."""
+    """True if a key is present in env (singular OR plural _KEYS) or config.
+
+    ``name`` is the singular form (e.g. ``FOOTBALL_API_KEY``); the plural
+    secret is ``FOOTBALL_API_KEYS`` (replace trailing KEY with KEYS).
+    """
+    plural = name[:-3] + "KEYS" if name.endswith("KEY") else name + "_KEYS"
     return bool(
         os.getenv(name)
-        or os.getenv(name + "_KEYS")
+        or os.getenv(plural)
         or get(f"data.{name.lower()}", None)
         or get(f"data.{name.lower()}_keys", None)
     )
