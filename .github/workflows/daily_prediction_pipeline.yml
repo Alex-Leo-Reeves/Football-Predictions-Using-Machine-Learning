@@ -40,6 +40,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Test Telegram Bot (standalone)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python -c "
+          import os, requests
+          token = os.getenv('TELEGRAM_BOT_TOKEN', '')
+          chat = os.getenv('TELEGRAM_CHAT_ID', '')
+          print('token set:', bool(token), '| chat set:', bool(chat))
+          if token and chat:
+              r = requests.post(f'https://api.telegram.org/bot{token}/sendMessage',
+                                json={'chat_id': chat, 'text': '✅ Pipeline started — test from GitHub Actions'},
+                                timeout=15)
+              print('telegram status:', r.status_code, r.text[:200])
+          else:
+              print('MISSING TELEGRAM SECRETS — check Settings > Secrets')
+          "
+
       - name: Train Engine & Run Daily Prediction
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}

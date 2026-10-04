@@ -20,7 +20,13 @@ class IngestionError(RuntimeError):
 
 
 def _has_key(name: str) -> bool:
-    return bool(os.getenv(name) or get(f"data.{name.lower()}", None))
+    """True if a key is present in env (singular OR plural _KEYS) or config."""
+    return bool(
+        os.getenv(name)
+        or os.getenv(name + "_KEYS")
+        or get(f"data.{name.lower()}", None)
+        or get(f"data.{name.lower()}_keys", None)
+    )
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -399,8 +405,11 @@ class DataLoader:
     def load_today_fixtures(self) -> List[Fixture]:
         """Return today's fixtures (real with odds, or synthetic)."""
         if self.use_mock:
-            return self._ensure_synthetic().today_fixtures()
+            fx = self._ensure_synthetic().today_fixtures()
+            print(f"[ingestion] use_mock=True — using SYNTHETIC fixtures ({len(fx)})")
+            return fx
         fb, odds, oddspapi = self._ensure_real_clients()
+        print(f"[ingestion] real clients: football={fb is not None} odds={odds is not None} oddspapi={oddspapi is not None}")
         # PRIMARY: OddsPapi covers ALL leagues/competitions in a few chunked
         # requests (tournaments -> fixtures), so try it first for the full
         # worldwide slate.
@@ -408,6 +417,7 @@ class DataLoader:
             try:
                 real = build_oddspapi_today_fixtures(oddspapi)
                 if real:
+                    print(f"[ingestion] OddsPapi: {len(real)} real fixtures loaded")
                     return real
             except Exception as exc:  # pragma: no cover
                 print(f"[ingestion] OddsPapi today fixtures failed: {exc}")
@@ -419,9 +429,12 @@ class DataLoader:
             real = build_real_today_fixtures(fb, odds, oddspapi, league, season,
                                              league_ids=league_ids)
             if real:
+                print(f"[ingestion] API-Football: {len(real)} real fixtures loaded")
                 return real
             print("[ingestion] API-Football returned no today fixtures")
-        return self._ensure_synthetic().today_fixtures()
+        fx = self._ensure_synthetic().today_fixtures()
+        print(f"[ingestion] FALLING BACK to synthetic fixtures ({len(fx)})")
+        return fx
 
     def load_basketball_history(self) -> List[MatchResult]:
         """Return basketball historical match results (synthetic for now)."""
