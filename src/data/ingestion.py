@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from src.config import get
-from src.data.schemas import Fixture, MatchResult, naive
+from src.data.schemas import Fixture, MatchResult, naive, normalize_team_name
 from src.data.synthetic import SyntheticLeague
 
 
@@ -344,8 +344,10 @@ def build_football_data_history(client, competitions, seasons) -> List[MatchResu
                 results.append(MatchResult(
                     match_id=str(fid),
                     kickoff=datetime.fromisoformat(b["kickoff"].replace("Z", "+00:00")),
-                    home_team_id=str(b["home_id"]),
-                    away_team_id=str(b["away_id"]),
+                    # Use normalized team NAMES as IDs so they match the odds
+                    # feed's fixtures (which identify teams by name, not id).
+                    home_team_id=normalize_team_name(b["home_name"]),
+                    away_team_id=normalize_team_name(b["away_name"]),
                     home_goals=_to_int(b["home_goals"]),
                     away_goals=_to_int(b["away_goals"]),
                     home_xg=0.0,
@@ -424,8 +426,10 @@ def build_odds_api_today_fixtures(odds_client) -> List[Fixture]:
             fixtures.append(Fixture(
                 fixture_id=str(fid),
                 kickoff=datetime.fromisoformat(commence.replace("Z", "+00:00")),
-                home_team_id=home,
-                away_team_id=away,
+                # Normalized team names as IDs so they match the training
+                # history (football-data.org) which now also uses names.
+                home_team_id=normalize_team_name(home),
+                away_team_id=normalize_team_name(away),
                 home_team_name=home,
                 away_team_name=away,
                 league=sport,

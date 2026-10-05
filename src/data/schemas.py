@@ -21,6 +21,34 @@ def naive(dt: datetime) -> datetime:
     return dt
 
 
+def normalize_team_name(name: str) -> str:
+    """Normalize a team name to a stable key usable across data sources.
+
+    Strips accents, lowercases, and removes Brazilian state suffixes
+    (``Bragantino-SP`` -> ``bragantino``), generic club suffixes
+    (``Chelsea FC`` -> ``chelsea``) and common club prefixes
+    (``CR Vasco da Gama`` -> ``vasco da gama``, ``EC Bahia`` -> ``bahia``)
+    so The Odds API names match football-data.org names. ``&`` -> ``and``
+    so ``Brighton & Hove Albion`` matches ``Brighton and Hove Albion``.
+    """
+    import re
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", str(name))
+    s = "".join(c for c in s if not unicodedata.combining(c))  # strip accents
+    s = s.lower()
+    s = s.replace("&", "and")
+    s = re.sub(r"[-_]", " ", s)
+    # Brazilian state suffixes: -sp -rj -mg -ba -pr -rs -go -ce -pe -sc -mt -df ...
+    s = re.sub(r"\s+(sp|rj|mg|ba|pr|rs|go|ce|pe|sc|mt|df|pa|ma|pb|rn|se|al|pi|ro|ac|am|rr|ap|to)$", "", s)
+    # generic club suffixes (incl. Brazilian full names: FR, EC, CR, CA)
+    s = re.sub(r"\s+(fc|sc|ac|cf|afc|cfc|cc|fr|ec|cr|ca)$", "", s)
+    # leading club prefixes (Brazilian + common European)
+    s = re.sub(r"^(cr|ca|ec|sc|fc|ac|cf|afc|fr|gr|ss|aa|cd|deportivo|club|sport|sporting|racing|atletico|athletic)\s+", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
 @dataclass
 class Team:
     """A team with a stable identifier used across features."""
