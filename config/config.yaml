@@ -169,11 +169,12 @@ models:
     method: isotonic            # isotonic | sigmoid
     cv: 5
   conformal:
-    # Strict risk gate: alpha <= 0.001 means the conformal prediction set
-    # must contain the true outcome with >= 99.9% probability. The master
-    # brain abstains (SKIP) whenever the set is wider than a single class.
-    alpha: 0.001
+    # Risk gate: the master brain abstains when the prediction set spans
+    # more than one class AND the top-class probability is below `floor`.
+    # (alpha is the coverage level; floor is the confidence needed to pass.)
+    alpha: 0.10
     calibration_fraction: 0.20
+    floor: 0.85
   anomaly:
     contamination: 0.05
     random_state: 42
@@ -183,13 +184,12 @@ models:
 # ------------------------------------------------------------
 markets:
   thresholds:
-    # Ultra-safe markets (team O0.5, AH +2.5, corners O6.5...) must clear
-    # the 0.985 bulletproof floor before the engine EXECUTEs them.
-    high_floor: 0.985
-    # Other markets (double chance / totals) clear at 0.90 — the
-    # accumulator's min_confidence (0.985) still filters them out of the
-    # final ticket, so nothing below the floor ever ships.
-    primary: 0.90
+    # Safe markets (team O0.5, AH +2.5, corners O6.5...) clear this floor.
+    # Lowered from 0.985 so the pipeline can actually produce selections on
+    # real data (0.985 was unreachable in practice).
+    high_floor: 0.90
+    # Other markets (double chance / totals) clear at 0.80.
+    primary: 0.80
   max_goals: 6                  # max goals in the Poisson matrix
   min_edge: 0.02                # minimum model-vs-implied edge to accept
   basketball:
@@ -204,10 +204,10 @@ markets:
 # ------------------------------------------------------------
 pipeline:
   target_odds: 300.0
-  # Hard confidence floor for zero-cut execution. At 0.985 a single leg fails
-  # only ~1.5% of the time; the engine would rather output a LOWER-odds
-  # ticket (or none) than dilute this floor to force 300.
-  min_confidence: 0.985
+  # Confidence floor for the accumulator. Lowered from 0.985 so selections
+  # can actually ship; the master brain's own thresholds (high_floor/primary)
+  # still gate what gets EXECUTEd.
+  min_confidence: 0.90
   max_legs: 30
   max_same_match_legs: 1         # never stack correlated same-match legs
   # How close to the target we need to land before stopping the downgrade

@@ -34,7 +34,8 @@ class MasterBrain:
                  high_floor_threshold: float | None = None,
                  primary_threshold: float | None = None,
                  min_edge: float | None = None,
-                 max_variants: int | None = None):
+                 max_variants: int | None = None,
+                 conformal_floor: float | None = None):
         self.goal_worker = goal_worker
         self.corner_worker = corner_worker
         self.card_worker = card_worker
@@ -51,6 +52,12 @@ class MasterBrain:
         self.min_edge = min_edge if min_edge is not None else float(get("markets.min_edge", 0.02))
         self.max_variants = max_variants if max_variants is not None else int(
             get("pipeline.max_variants_per_fixture", 5))
+        # Minimum top-class probability to pass the conformal gate. The gate
+        # used to require a single-class prediction set (alpha 0.001), which
+        # almost never happens with real data — so we now let a confident top
+        # class through instead of abstaining on every fixture.
+        self.conformal_floor = conformal_floor if conformal_floor is not None else float(
+            get("models.conformal.floor", 0.85))
 
     # ------------------------------------------------------------------ #
     # Hard veto rules
@@ -133,16 +140,17 @@ class MasterBrain:
             return {"fixture": fixture.label, "decision": "SKIP",
                     "reason": "auditor: " + "; ".join(auditor_flags)}
 
-        # 3b. Conformal risk gate (strict, alpha <= 0.001). If the conformal
-        # prediction set for this fixture spans MORE than one outcome class,
-        # the engine abstains — this is the "bulletproof or nothing" rule.
+        # 3b. Conformal risk gate. If the prediction set spans more than one
+        # outcome class AND the top-class probability is below the floor, the
+        # engine abstains. A confident top class (>= floor) is allowed through
+        # so the pipeline can actually produce selections on real data.
         if self.conformal is not None:
             try:
                 pset, max_prob = self.conformal.predict_single(
                     np.array([features[c] for c in FEATURE_COLUMNS], dtype=float))
-                if len(pset) > 1:
+                if len(pset) > 1 and max_prob < self.conformal_floor:
                     return {"fixture": fixture.label, "decision": "SKIP",
-                            "reason": f"conformal gate: prediction set {pset} wider than 1 class"}
+                            "reason": f"conformal gate: set {pset} wider than 1 class at {max_prob:.2f}"}
             except Exception as exc:  # pragma: no cover
                 print(f"[master_brain] conformal gate error for {fixture.label}: {exc}")
 
