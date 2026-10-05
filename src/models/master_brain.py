@@ -100,6 +100,7 @@ class MasterBrain:
                 mixed[key] = (1.0 - w) * stat_probs[key] + w * llm_probs[llm_key]
             else:
                 mixed[key] = stat_probs[key]
+        return mixed
 
     # ------------------------------------------------------------------ #
     # Full fixture evaluation
