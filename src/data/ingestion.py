@@ -315,7 +315,11 @@ def build_football_data_history(client, competitions, seasons) -> List[MatchResu
 
     Free tier has no xG/corners/cards, so those default to 0.0.
     ``competitions`` / ``seasons`` may be a single value or an iterable.
+    The free tier is rate-limited to 10 calls/min, so we sleep between
+    requests to avoid 429s (which otherwise drop whole competitions).
     """
+    import time
+
     from .football_data import parse_football_data_match
 
     if isinstance(competitions, str):
@@ -351,6 +355,7 @@ def build_football_data_history(client, competitions, seasons) -> List[MatchResu
                     home_cards=0,
                     away_cards=0,
                 ))
+            time.sleep(6)  # football-data.org free tier: 10 calls/min
     return results
 
 

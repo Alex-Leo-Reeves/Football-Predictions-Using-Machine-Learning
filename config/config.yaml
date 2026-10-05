@@ -69,7 +69,8 @@ data:
     base_url: "https://api.football-data.org/v4"
     daily_budget: 100
     # Competition codes to fetch historical results for (free tier).
-    competitions: ["PL", "ELC", "BL1", "SA", "PD", "FL1", "DED", "PPL", "CL"]
+    # BSA = Brazil Serie A (the odds feed returns lots of Brazilian fixtures).
+    competitions: ["PL", "ELC", "BL1", "SA", "PD", "FL1", "DED", "PPL", "CL", "BSA"]
     seasons: [2025, 2024]
   football_data_co_uk:
     # Locally-downloaded CSVs (free for personal use; the site blocks bots).
