@@ -116,10 +116,11 @@ def run_daily_pipeline(config: Optional[Dict[str, Any]] = None,
     teams = loader.teams()
     players = loader.players()
 
-    # ---- Time-window filter: only fixtures from now until end of day ----
+    # ---- Time-window filter: fixtures from now until end of window ----
     end_time = str(get("pipeline.kickoff_window.end", "23:30", config))
-    fixtures = filter_fixtures_by_time(fixtures, end_time=end_time)
-    bb_fixtures = filter_fixtures_by_time(bb_fixtures, end_time=end_time)
+    days_ahead = int(get("pipeline.kickoff_window.days_ahead", 0, config))
+    fixtures = filter_fixtures_by_time(fixtures, end_time=end_time, days_ahead=days_ahead)
+    bb_fixtures = filter_fixtures_by_time(bb_fixtures, end_time=end_time, days_ahead=days_ahead)
 
     log.info(f"Loaded {len(history)} football + {len(bb_history)} basketball historical matches, "
              f"{len(fixtures)} football + {len(bb_fixtures)} basketball today's fixtures")

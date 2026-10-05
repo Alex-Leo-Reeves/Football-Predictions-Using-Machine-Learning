@@ -7,7 +7,7 @@ are missing — so the pipeline runs end-to-end locally and on GitHub Actions.
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from src.config import get
@@ -435,12 +435,15 @@ def build_odds_api_today_fixtures(odds_client) -> List[Fixture]:
 # Time-window filtering
 # ---------------------------------------------------------------------- #
 def filter_fixtures_by_time(fixtures: List[Fixture], now: datetime | None = None,
-                            end_time: str = "23:30") -> List[Fixture]:
-    """Keep only fixtures that kick off between ``now`` and today's ``end_time``.
+                            end_time: str = "23:30", days_ahead: int = 0) -> List[Fixture]:
+    """Keep only fixtures that kick off between ``now`` and the window end.
 
     Matches that have already started (e.g. a 9am kickoff when the script
     runs at 10am) are excluded, as are matches after the betting window
     closes (default 23:30). ``end_time`` is a ``"HH:MM"`` 24h string.
+    ``days_ahead`` extends the window N days beyond today (0 = today only),
+    so the engine can also evaluate tomorrow's slate — the odds feed returns
+    the next ~48h of games, and most of them kick off tomorrow.
     """
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
@@ -451,7 +454,8 @@ def filter_fixtures_by_time(fixtures: List[Fixture], now: datetime | None = None
     except (ValueError, AttributeError):
         end_h, end_m = 23, 30
 
-    window_end = now.replace(hour=end_h, minute=end_m, second=0, microsecond=0)
+    window_end = (now + timedelta(days=days_ahead)).replace(
+        hour=end_h, minute=end_m, second=0, microsecond=0)
 
     kept: List[Fixture] = []
     for fixture in fixtures:

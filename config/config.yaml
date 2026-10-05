@@ -219,9 +219,14 @@ pipeline:
   # Betting window: only fixtures that kick off between now and this local
   # end time are considered. Matches already started (e.g. 9am when run at
   # 10am) are excluded automatically.
+  # days_ahead extends the window N days beyond today (0 = today only). The
+  # odds feed returns the next ~48h of games, so 2 lets the engine evaluate
+  # tomorrow's slate too (otherwise most fixtures get filtered out and the
+  # model only sees a handful of matches from leagues it wasn't trained on).
   kickoff_window:
     start: "now"
     end: "23:30"
+    days_ahead: 2
   # ALL-OR-NOTHING rule: if ANY leg fails the whole ticket is a loss.
   # System-bet splits (4/5, 5/6...) hedge against single-leg risk and
   # contradict that rule, so they are OFF by default. Set true to re-enable.
