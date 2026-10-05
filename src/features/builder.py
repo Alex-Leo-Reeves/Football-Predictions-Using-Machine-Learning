@@ -9,7 +9,7 @@ from typing import Dict, List
 
 import pandas as pd
 
-from src.data.schemas import Fixture, MatchResult
+from src.data.schemas import Fixture, MatchResult, naive
 from src.features.elo import EloSystem
 from src.features.h2h import H2HFeatureBuilder
 from src.features.rolling import RollingFeatureBuilder
@@ -31,7 +31,7 @@ class FeatureBuilder:
 
     def __init__(self, history: List[MatchResult], teams: Dict[str, object] | None = None,
                  players: Dict[str, object] | None = None):
-        self.history = sorted(history, key=lambda m: m.kickoff)
+        self.history = sorted(history, key=lambda m: naive(m.kickoff))
         self.teams = teams or {}
         self.players = players or {}
         self.elo = EloSystem()
@@ -52,16 +52,8 @@ class FeatureBuilder:
         home_id, away_id = fixture.home_team_id, fixture.away_team_id
         # Only matches before kickoff are usable. Normalize timezones so we
         # never crash comparing offset-naive vs offset-aware datetimes.
-        kickoff = fixture.kickoff
-        if kickoff.tzinfo is not None:
-            kickoff = kickoff.replace(tzinfo=None)
-        prior = []
-        for m in self.history:
-            mk = m.kickoff
-            if mk.tzinfo is not None:
-                mk = mk.replace(tzinfo=None)
-            if mk < kickoff:
-                prior.append(m)
+        kickoff = naive(fixture.kickoff)
+        prior = [m for m in self.history if naive(m.kickoff) < kickoff]
 
         home_roll = self.rolling.team_features(prior, home_id)
         away_roll = self.rolling.team_features(prior, away_id)
@@ -106,7 +98,7 @@ class FeatureBuilder:
         targets: List[Dict[str, float]] = []
 
         for match in history:
-            prior = [m for m in self.history if m.kickoff < match.kickoff]
+            prior = [m for m in self.history if naive(m.kickoff) < naive(match.kickoff)]
             home_roll = self.rolling.team_features(prior, match.home_team_id)
             away_roll = self.rolling.team_features(prior, match.away_team_id)
             h2h = self.h2h.features(prior, match.home_team_id, match.away_team_id)

@@ -18,7 +18,22 @@ data:
     sport: "soccer_epl"          # see The Odds API sport keys
     regions: "eu"
     markets: ["h2h", "totals", "spreads"]
-    # Free tier = 500 req/month per key (multi-key rotation supported)
+    # Free tier = 500 req/month per key (multi-key rotation supported).
+    # Each soccer sport key below = 1 request per run, so scanning all of
+    # them costs ~30 credits/day — well within the free tier.
+    sport_keys: ["soccer_epl", "soccer_france_ligue_one", "soccer_germany_bundesliga",
+                 "soccer_italy_serie_a", "soccer_spain_la_liga", "soccer_netherlands_eredivisie",
+                 "soccer_portugal_primeira_liga", "soccer_uefa_champs_league",
+                 "soccer_uefa_europa_league", "soccer_uefa_europa_conference_league",
+                 "soccer_brazil_campeonato", "soccer_usa_mls", "soccer_mexico_ligamx",
+                 "soccer_argentina_primera_division", "soccer_turkey_super_league",
+                 "soccer_belgium_first_div", "soccer_spl", "soccer_greece_super_league",
+                 "soccer_denmark_superliga", "soccer_sweden_allsvenskan",
+                 "soccer_norway_eliteserien", "soccer_australia_aleague",
+                 "soccer_japan_j_league", "soccer_korea_kleague1", "soccer_china_superleague",
+                 "soccer_saudi_arabia_pro_league", "soccer_russia_premier_league",
+                 "soccer_poland_ekstraklasa", "soccer_switzerland_superleague",
+                 "soccer_efl_champ"]
     daily_budget: 500
   oddspapi:
     # PRIMARY odds source — free historical odds + line-movement analysis,
@@ -48,6 +63,21 @@ data:
     # recent N completed fixtures per run.
     daily_budget: 90
     max_stats_fixtures: 60
+  football_data:
+    # football-data.org — free tier: 12 competitions, 10 calls/min.
+    # Provides fixtures/results/standings (NO xG/corners/cards on free tier).
+    base_url: "https://api.football-data.org/v4"
+    daily_budget: 100
+    # Competition codes to fetch historical results for (free tier).
+    competitions: ["PL", "ELC", "BL1", "SA", "PD", "FL1", "DED", "PPL", "CL"]
+    seasons: [2025, 2024]
+  football_data_co_uk:
+    # Locally-downloaded CSVs (free for personal use; the site blocks bots).
+    # Drop files here: https://www.football-data.co.uk/data.php
+    # Adds corners/cards/shots to training data (free football-data.org tier
+    # does NOT include these).
+    dir: "data/raw/football-data-co-uk"
+
   # When false, the pipeline uses REAL API data when keys are present
   # (API-Football / OddsPapi / The Odds API) and only falls back to the
   # synthetic generator when no keys are available — so it scans ALL of

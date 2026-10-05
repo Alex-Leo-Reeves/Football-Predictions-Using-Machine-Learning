@@ -11,7 +11,7 @@ from typing import Dict, List
 import numpy as np
 
 from src.config import get
-from src.data.schemas import MatchResult
+from src.data.schemas import MatchResult, naive
 
 
 def ema(values: List[float], span: int) -> float:
@@ -51,7 +51,7 @@ class RollingFeatureBuilder:
 
     def team_features(self, history: List[MatchResult], team_id: str) -> Dict[str, float]:
         """Rolling features for one team (chronological)."""
-        matches = sorted(self._team_matches(history, team_id), key=lambda m: m.kickoff)
+        matches = sorted(self._team_matches(history, team_id), key=lambda m: naive(m.kickoff))
         gf, ga, xgf, xga, scored, conceded = [], [], [], [], [], []
         home_gf, home_ga = [], []
 

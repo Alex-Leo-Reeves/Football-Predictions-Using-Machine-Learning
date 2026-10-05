@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from src.config import get, load_config
 from src.data.ingestion import DataLoader, filter_fixtures_by_time
+from src.data.schemas import naive
 from src.features.builder import FeatureBuilder
 from src.markets.accumulator import AccumulatorBuilder
 from src.models.master_brain import MasterBrain
@@ -46,13 +47,15 @@ def _build_llm_context(history, fixture, players, n_recent: int = 8) -> Dict[str
     Returns recent form for both teams, H2H meetings, and injury/lineup
     availability — the raw data the expert reasons over.
     """
-    prior = [m for m in history if m.kickoff < fixture.kickoff]
+    # Normalize timezones so we never crash comparing naive vs aware datetimes.
+    kickoff = naive(fixture.kickoff)
+    prior = [m for m in history if naive(m.kickoff) < kickoff]
     home_id, away_id = fixture.home_team_id, fixture.away_team_id
 
     def team_recent(tid: str) -> List[Dict[str, Any]]:
         rows = []
         for m in sorted([x for x in prior if x.home_team_id == tid or x.away_team_id == tid],
-                        key=lambda x: x.kickoff)[-n_recent:]:
+                        key=lambda x: naive(x.kickoff))[-n_recent:]:
             if m.home_team_id == tid:
                 gf, ga = m.home_goals, m.away_goals
                 opp = m.away_team_id
@@ -70,7 +73,7 @@ def _build_llm_context(history, fixture, players, n_recent: int = 8) -> Dict[str
 
     meetings = []
     for m in sorted([x for x in prior if {x.home_team_id, x.away_team_id} == {home_id, away_id}],
-                    key=lambda x: x.kickoff)[-6:]:
+                    key=lambda x: naive(x.kickoff))[-6:]:
         meetings.append({
             "date": m.kickoff.date().isoformat(),
             "home": m.home_team_id, "away": m.away_team_id,

@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 import numpy as np
 import pandas as pd
 
-from src.data.schemas import Fixture, MatchResult
+from src.data.schemas import Fixture, MatchResult, naive
 from src.features.builder import FeatureBuilder
 from src.markets.accumulator import resolve_market_outcome
 from src.models.master_brain import MasterBrain
@@ -28,7 +28,7 @@ def run_shadow_test(history: List[MatchResult], engine: TrainedEngine,
     """Forward-only backtest of the master brain over historical windows."""
     from src.pipeline.validation import expanding_window_splits
 
-    history = sorted(history, key=lambda m: m.kickoff)
+    history = sorted(history, key=lambda m: naive(m.kickoff))
     n = len(history)
     all_results: List[Dict[str, Any]] = []
     executed = 0

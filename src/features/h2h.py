@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Dict, List
 
 from src.config import get
-from src.data.schemas import MatchResult
+from src.data.schemas import MatchResult, naive
 
 
 class H2HFeatureBuilder:
@@ -22,7 +22,7 @@ class H2HFeatureBuilder:
             m for m in history
             if {m.home_team_id, m.away_team_id} == {home_id, away_id}
         ]
-        meetings = sorted(meetings, key=lambda m: m.kickoff)[-self.window:]
+        meetings = sorted(meetings, key=lambda m: naive(m.kickoff))[-self.window:]
 
         h2h_home_wins = 0
         h2h_away_wins = 0
@@ -63,7 +63,7 @@ class H2HFeatureBuilder:
         # ---- Venue fortress index (home team at home) ----
         home_matches = sorted(
             [m for m in history if m.home_team_id == home_id],
-            key=lambda m: m.kickoff,
+            key=lambda m: naive(m.kickoff),
         )
         undefeated_streak = 0
         for m in reversed(home_matches):

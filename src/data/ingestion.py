@@ -7,11 +7,11 @@ are missing — so the pipeline runs end-to-end locally and on GitHub Actions.
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from src.config import get
-from src.data.schemas import Fixture, MatchResult
+from src.data.schemas import Fixture, MatchResult, naive
 from src.data.synthetic import SyntheticLeague
 
 
@@ -223,7 +223,7 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
             kickoff = datetime.fromisoformat(st.replace("Z", "+00:00"))
         except ValueError:
             continue
-        if today_start <= kickoff < today_end:
+        if today_start <= naive(kickoff) < today_end:
             todays.append(f)
 
     # Fetch odds for today's fixtures
@@ -308,6 +308,130 @@ def build_oddspapi_today_fixtures(oddspapi_client) -> List[Fixture]:
 
 
 # ---------------------------------------------------------------------- #
+# football-data.org builders (free tier)
+# ---------------------------------------------------------------------- #
+def build_football_data_history(client, competitions, seasons) -> List[MatchResult]:
+    """Build MatchResult objects from football-data.org (free tier).
+
+    Free tier has no xG/corners/cards, so those default to 0.0.
+    ``competitions`` / ``seasons`` may be a single value or an iterable.
+    """
+    from .football_data import parse_football_data_match
+
+    if isinstance(competitions, str):
+        competitions = [competitions]
+    if isinstance(seasons, int):
+        seasons = [seasons]
+
+    results: List[MatchResult] = []
+    seen: set = set()
+    for code in competitions:
+        for season in seasons:
+            for item in client.matches_by_competition(code, season):
+                b = parse_football_data_match(item)
+                if b.get("status") not in ("FINISHED", "AWARDED"):
+                    continue
+                fid = b.get("fixture_id")
+                if fid is None or b.get("home_goals") is None or b.get("away_goals") is None:
+                    continue
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                results.append(MatchResult(
+                    match_id=str(fid),
+                    kickoff=datetime.fromisoformat(b["kickoff"].replace("Z", "+00:00")),
+                    home_team_id=str(b["home_id"]),
+                    away_team_id=str(b["away_id"]),
+                    home_goals=_to_int(b["home_goals"]),
+                    away_goals=_to_int(b["away_goals"]),
+                    home_xg=0.0,
+                    away_xg=0.0,
+                    home_corners=0,
+                    away_corners=0,
+                    home_cards=0,
+                    away_cards=0,
+                ))
+    return results
+
+
+def build_football_data_today_fixtures(client) -> List[Fixture]:
+    """Build today's Fixture objects from football-data.org (free tier)."""
+    from .football_data import parse_football_data_match
+
+    today = date.today().isoformat()
+    fixtures: List[Fixture] = []
+    for item in client.matches_by_date(today, today):
+        b = parse_football_data_match(item)
+        if b.get("status") not in ("SCHEDULED", "TIMED"):
+            continue
+        if b.get("fixture_id") is None:
+            continue
+        fixtures.append(Fixture(
+            fixture_id=str(b["fixture_id"]),
+            kickoff=datetime.fromisoformat(b["kickoff"].replace("Z", "+00:00")),
+            home_team_id=str(b["home_id"]),
+            away_team_id=str(b["away_id"]),
+            home_team_name=b["home_name"] or "",
+            away_team_name=b["away_name"] or "",
+            league=b["league"] or "",
+            country=b["country"] or "",
+            sport="football",
+        ))
+    return fixtures
+
+
+def build_football_data_co_uk_history() -> List[MatchResult]:
+    """Load locally-downloaded football-data.co.uk CSVs (corners/cards/shots)."""
+    from .football_data_co_uk import load_football_data_co_uk_history
+    return load_football_data_co_uk_history()
+
+
+# ---------------------------------------------------------------------- #
+# The Odds API builders (free tier — primary today-fixtures source)
+# ---------------------------------------------------------------------- #
+def build_odds_api_today_fixtures(odds_client) -> List[Fixture]:
+    """Build today's Fixture objects directly from The Odds API.
+
+    The Odds API returns upcoming games WITH odds in one call per sport key,
+    so it replaces OddsPapi/API-Football as the primary source for today's
+    fixtures. Free tier = 500 credits/month; each sport key = 1 credit.
+    """
+    from .odds_api import parse_odds_payload
+
+    sport_keys = get("data.odds_api.sport_keys", ["soccer_epl"])
+    regions = get("data.odds_api.regions", "eu")
+    fixtures: List[Fixture] = []
+    seen: set = set()
+    for sport in sport_keys:
+        items = odds_client.odds(sport, regions)
+        odds_by_key = parse_odds_payload(items)
+        for item in items:
+            home = item.get("home_team", "")
+            away = item.get("away_team", "")
+            commence = item.get("commence_time")
+            if not home or not away or not commence:
+                continue
+            fid = item.get("id") or f"{sport}_{home}_{away}"
+            if fid in seen:
+                continue
+            seen.add(fid)
+            match_key = f"{home.lower()} @ {away.lower()}"
+            fixtures.append(Fixture(
+                fixture_id=str(fid),
+                kickoff=datetime.fromisoformat(commence.replace("Z", "+00:00")),
+                home_team_id=home,
+                away_team_id=away,
+                home_team_name=home,
+                away_team_name=away,
+                league=sport,
+                country="",
+                sport="football",
+                odds=odds_by_key.get(match_key, {}),
+            ))
+    return fixtures
+
+
+# ---------------------------------------------------------------------- #
 # Time-window filtering
 # ---------------------------------------------------------------------- #
 def filter_fixtures_by_time(fixtures: List[Fixture], now: datetime | None = None,
@@ -360,6 +484,7 @@ class DataLoader:
         self._football_client = None
         self._odds_client = None
         self._oddspapi_client = None
+        self._football_data_client = None
 
     def _ensure_synthetic(self) -> SyntheticLeague:
         if self.synthetic is None:
@@ -393,18 +518,44 @@ class DataLoader:
                 self._oddspapi_client = OddsPapiClient()
             except RuntimeError:
                 self._oddspapi_client = None
-        return self._football_client, self._odds_client, self._oddspapi_client
+        if self._football_data_client is None and _has_key("FOOTBALL_DATA_ORG_KEY"):
+            from src.data.football_data import FootballDataClient
+            try:
+                self._football_data_client = FootballDataClient()
+            except RuntimeError:
+                self._football_data_client = None
+        return (self._football_client, self._odds_client,
+                self._oddspapi_client, self._football_data_client)
 
     @property
     def has_real_data(self) -> bool:
-        fb, _, _ = self._ensure_real_clients()
-        return fb is not None
+        fb, _, _, fdata = self._ensure_real_clients()
+        return fb is not None or fdata is not None
 
     def load_history(self) -> List[MatchResult]:
         """Return historical match results (real or synthetic)."""
         if self.use_mock:
             return self._ensure_synthetic().history
-        fb, _, _ = self._ensure_real_clients()
+        fb, _, _, fdata = self._ensure_real_clients()
+        # 1) football-data.co.uk CSVs (richest free source: corners/cards/shots)
+        try:
+            co_uk = build_football_data_co_uk_history()
+            if co_uk:
+                print(f"[ingestion] football-data.co.uk: {len(co_uk)} historical matches loaded")
+                return co_uk
+        except Exception as exc:  # pragma: no cover
+            print(f"[ingestion] football-data.co.uk history failed: {exc}")
+        # 2) football-data.org (free tier — results only, no xG/corners/cards)
+        if fdata is not None:
+            comps = get("data.football_data.competitions",
+                        ["PL", "ELC", "BL1", "SA", "PD", "FL1", "DED", "PPL", "CL"])
+            seasons = get("data.football_data.seasons", [2025, 2024])
+            real = build_football_data_history(fdata, comps, seasons)
+            if real:
+                print(f"[ingestion] football-data.org: {len(real)} historical matches loaded")
+                return real
+            print("[ingestion] football-data.org returned no history")
+        # 3) API-Football (legacy)
         if fb is not None:
             league = int(get("data.football_api.league_id", 39))
             seasons = get("data.football_api.seasons", [int(get("data.football_api.season", 2024))])
@@ -421,11 +572,18 @@ class DataLoader:
             fx = self._ensure_synthetic().today_fixtures()
             print(f"[ingestion] use_mock=True — using SYNTHETIC fixtures ({len(fx)})")
             return fx
-        fb, odds, oddspapi = self._ensure_real_clients()
-        print(f"[ingestion] real clients: football={fb is not None} odds={odds is not None} oddspapi={oddspapi is not None}")
-        # PRIMARY: OddsPapi covers ALL leagues/competitions in a few chunked
-        # requests (tournaments -> fixtures), so try it first for the full
-        # worldwide slate.
+        fb, odds, oddspapi, fdata = self._ensure_real_clients()
+        print(f"[ingestion] real clients: football={fb is not None} odds={odds is not None} oddspapi={oddspapi is not None} fdata={fdata is not None}")
+        # PRIMARY: The Odds API (free tier — returns fixtures WITH odds)
+        if odds is not None:
+            try:
+                real = build_odds_api_today_fixtures(odds)
+                if real:
+                    print(f"[ingestion] The Odds API: {len(real)} real fixtures loaded")
+                    return real
+            except Exception as exc:  # pragma: no cover
+                print(f"[ingestion] The Odds API today fixtures failed: {exc}")
+        # OddsPapi (legacy primary)
         if oddspapi is not None:
             try:
                 real = build_oddspapi_today_fixtures(oddspapi)
@@ -434,7 +592,7 @@ class DataLoader:
                     return real
             except Exception as exc:  # pragma: no cover
                 print(f"[ingestion] OddsPapi today fixtures failed: {exc}")
-        # FALLBACK: API-Football (free plan only covers 2022-2024 seasons).
+        # API-Football (legacy)
         if fb is not None:
             league = int(get("data.football_api.league_id", 39))
             season = int(get("data.football_api.season", 2024))
@@ -445,6 +603,15 @@ class DataLoader:
                 print(f"[ingestion] API-Football: {len(real)} real fixtures loaded")
                 return real
             print("[ingestion] API-Football returned no today fixtures")
+        # football-data.org (free tier)
+        if fdata is not None:
+            try:
+                real = build_football_data_today_fixtures(fdata)
+                if real:
+                    print(f"[ingestion] football-data.org: {len(real)} real fixtures loaded")
+                    return real
+            except Exception as exc:  # pragma: no cover
+                print(f"[ingestion] football-data.org today fixtures failed: {exc}")
         fx = self._ensure_synthetic().today_fixtures()
         print(f"[ingestion] FALLING BACK to synthetic fixtures ({len(fx)})")
         return fx

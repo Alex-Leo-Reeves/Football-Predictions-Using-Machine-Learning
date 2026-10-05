@@ -10,6 +10,17 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 
+def naive(dt: datetime) -> datetime:
+    """Return a timezone-naive copy of ``dt``.
+
+    Strips tzinfo so naive/aware comparisons never raise
+    ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+    """
+    if dt.tzinfo is not None:
+        return dt.replace(tzinfo=None)
+    return dt
+
+
 @dataclass
 class Team:
     """A team with a stable identifier used across features."""

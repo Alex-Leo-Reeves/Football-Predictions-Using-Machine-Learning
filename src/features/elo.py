@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Dict
 
 from src.config import get
-from src.data.schemas import MatchResult
+from src.data.schemas import MatchResult, naive
 
 
 class EloSystem:
@@ -62,7 +62,7 @@ class EloSystem:
 
     def fit(self, history) -> None:
         """Fit ratings over chronological history."""
-        for match in sorted(history, key=lambda m: m.kickoff):
+        for match in sorted(history, key=lambda m: naive(m.kickoff)):
             self.update(match)
 
     def rating(self, team_id: str) -> float:
