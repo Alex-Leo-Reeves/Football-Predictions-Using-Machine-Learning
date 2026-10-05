@@ -1,6 +1,8 @@
 name: Daily High-Odds Prediction Pipeline
 
 on:
+  push:
+    branches: [main]
   schedule:
     # Runs daily at 06:00 UTC to evaluate the daily match slate
     - cron: '0 6 * * *'
@@ -67,6 +69,7 @@ jobs:
           FOOTBALL_API_KEYS: ${{ secrets.FOOTBALL_API_KEYS }}
           ODDSPAPI_KEY: ${{ secrets.ODDSPAPI_KEY }}
           ODDSPAPI_KEYS: ${{ secrets.ODDSPAPI_KEYS }}
+          FOOTBALL_DATA_ORG_KEY: ${{ secrets.FOOTBALL_DATA_ORG_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           TARGET_ODDS: ${{ github.event.inputs.target_odds || '300.0' }}
